@@ -1,11 +1,11 @@
 ## 常用的c++模板实现
 
-###  <font color=pink>**一、封装智能指针的AutoPtr**</font>
+###  <font color=pink>**一、用于RAII管理资源句柄AutoHandle**</font>
 
 
 ```c++
     template<class _T, class _FreeFunc>
-    struct AutoPtr
+    struct AutoHandle
 ```
 #### <font color=pink> _T: 智能指针指向的类型</font>
 

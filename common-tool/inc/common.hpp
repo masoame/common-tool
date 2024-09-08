@@ -8,6 +8,9 @@
 
 #include<future>
 #include<assert.h>
+
+extern void close(int fd);
+
 namespace common
 {
     /*
@@ -25,19 +28,19 @@ namespace common
 	* _T: 被封装的智能指针类型
     */
     template<class _T, class _FreeFunc>
-    struct AutoPtr
+    struct AutoHandle
     {
         using _Type = std::remove_reference_t<_T>;
         static_assert(std::is_invocable_v< _FreeFunc::value_type, _Type**> || std::is_invocable_v<_FreeFunc::value_type, _Type*>);
         constexpr static bool isSecPtr = std::is_invocable_v<_FreeFunc::value_type, _Type**>;
 
-        AutoPtr() noexcept {}
-        AutoPtr(AutoPtr& Autoptr) = delete;
-        explicit AutoPtr(AutoPtr&& Autoptr) noexcept : _ptr(Autoptr.release()) {}
-        AutoPtr(_Type* ptr) noexcept : _ptr(ptr) {}
+		AutoHandle() noexcept {}
+		AutoHandle(AutoHandle& _handle) = delete;
+        explicit AutoHandle(AutoHandle&& _handle) noexcept : _ptr(_handle.release()) {}
+		AutoHandle(_Type* ptr) noexcept : _ptr(ptr) {}
 
         void operator=(_Type* ptr) noexcept { _ptr.reset(ptr); }
-        void operator=(AutoPtr&& Autoptr) noexcept { _ptr.reset(Autoptr.release()); }
+        void operator=(AutoHandle&& _handle) noexcept { _ptr.reset(_handle.release()); }
 
         operator const _Type* () const noexcept { return _ptr.get(); }
         operator _Type*& () noexcept { return *reinterpret_cast<_Type**>(this); }
@@ -57,6 +60,42 @@ namespace common
         using DeletePtr = std::conditional<isSecPtr, DeleteSecPtr, DeletePrimaryPtr>::type;
         std::unique_ptr<_Type, DeletePtr> _ptr;
     };
+
+	/*
+	* unique_fd用于封装一个文件描述符，使其可以自动管理内存，
+	* 方便对于一些c库自动关闭文件描述符进行适配。
+	* 重载 operator bool 返回一个布尔值，用于判断是否有效。
+	* 重载 operator int 返回一个文件描述符。
+	* 重载 operator= 用于赋值。
+	* 重载 reset 用于重置文件描述符。
+	* 重载 release 用于获取文件描述符。
+	* 重载 swap 用于交换两个unique_fd。
+	*/
+	template<class T = int, class FreeFunc = Functor<::close>>
+	struct unique_fd
+	{
+		T _fd;
+		unique_fd() : _fd(-1) {}
+		explicit unique_fd(int fd) : _fd(fd) {}
+		explicit unique_fd(const unique_fd&) = delete;
+		explicit unique_fd(unique_fd&& other) noexcept : _fd(other._fd) { other._fd = -1; }
+
+		unique_fd& operator=(const unique_fd&) = delete;
+		unique_fd& operator=(unique_fd&& other) noexcept { _fd = other._fd; other._fd = -1; return *this; }
+
+		~unique_fd() { if (_fd >= 0) FreeFunc{}(_fd); }
+
+		operator int() const noexcept { return _fd; }
+
+		int release() noexcept { int ret = _fd; _fd = -1; return ret; }
+		unique_fd& reset(int fd = -1) noexcept { if (_fd >= 0) FreeFunc{}(_fd); _fd = fd; return *this; }
+		void swap(unique_fd& other) noexcept { std::swap(_fd, other._fd); }
+		T get() const noexcept { return _fd; }
+
+		explicit operator bool() const noexcept { return _fd >= 0; }
+	};
+
+
     /*
     * reverse_bit用于反转位域reverse_bit
     */
@@ -76,7 +115,7 @@ namespace common
 	class circular_queue 
 	{
 		using _Type = std::remove_reference<_T>::type;
-		using _ElementPtrType = std::conditional_t<std::is_null_pointer_v<_DeleteFunctionType>, std::unique_ptr<_Type>, AutoPtr<_Type, _DeleteFunctionType>>;
+		using _ElementPtrType = std::conditional_t<std::is_null_pointer_v<_DeleteFunctionType>, std::unique_ptr<_Type>, AutoHandle<_Type, _DeleteFunctionType>>;
 		using _HasMutex = std::conditional_t<_IsThreadSafe, std::mutex, nullptr_t>;
 		using _IsLock = std::conditional_t<_IsThreadSafe, std::unique_lock<std::mutex>, nullptr_t>;
 

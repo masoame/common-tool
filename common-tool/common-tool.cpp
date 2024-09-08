@@ -4,7 +4,7 @@
 #include <chrono>
 using namespace std;
 
-common::circular_queue<int, nullptr_t, false> test(8);
+common::circular_queue<int, nullptr_t, false> test(12);
 void FreeFunc(int* a)
 {
 	delete a;
@@ -49,10 +49,10 @@ void task2()
 
 	std::osyncstream{ std::cout } << "thread id: " << std::this_thread::get_id() << " task2 end, time: "<< duration.count() << "us" << std::endl;
 }
-
 int main()
 {
-	common::ThreadPool pool(2,4);
+
+	common::ThreadPool pool(2,0);
 	auto a = pool.enqueue(task1);
 	auto b = pool.enqueue(task2);
 	a.get();
