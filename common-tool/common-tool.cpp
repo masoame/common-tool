@@ -4,23 +4,40 @@
 #include <chrono>
 using namespace std;
 
-common::circular_queue<int, nullptr_t, false> test(12);
+class A
+{
+public:
+	int i;
+	A(int i) :i(i) { std::cout << "constructor" << std::endl; }
+	~A() {}
+	A(const A& other) :i(other.i) { std::cout << "copy constructor" << std::endl; }
+
+	A(A&& other):i(other.i) { other.i = 0; std::cout << "move constructor" << std::endl; }
+
+	operator int() { return i; }
+};
+
+common::circular_queue<int, nullptr_t, false> test(8);
+std::queue<int> test2;
+std::mutex mtx;
+std::condition_variable cv, cv2;
+
+common::bounded_queue<int>* test3=new common::bounded_queue<int>(1000000);
+
 void FreeFunc(int* a)
 {
 	delete a;
 	return;
 }
-
+std::queue<std::vector<int>> pp;
 void task1()
 {
 	auto start = std::chrono::high_resolution_clock::now();
 
-	for (int i = 0; i < 10000000; i++)
+	for (int i = 0; i < 5000000; i++)
 	{
-		while (test.try_emplace(i)==false)
-		{
-			std::this_thread::yield();
-		}
+		test3->emplace_back(i);
+
 	}
 	auto end = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
@@ -30,32 +47,30 @@ void task1()
 void task2()
 {
 	auto start = std::chrono::high_resolution_clock::now();
-
-	for (int i = 0; i < 10000000; i++)
+	int ans = 0;
+	for (int i = 0; i < 5000000; i++)
 	{
-		while (true)
-		{
-			auto _ptr = test.try_pop();
-			if (_ptr != nullptr) {
-				//std::osyncstream{ std::cout } << "thread id: "<< std::this_thread::get_id() << " pop value: " << *_ptr << std::endl;
-				break;
-			}
-			std::this_thread::yield();
-		} ;
-
+		auto a = test3->pop();
 	}
 	auto end = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
 
-	std::osyncstream{ std::cout } << "thread id: " << std::this_thread::get_id() << " task2 end, time: "<< duration.count() << "us" << std::endl;
+	std::osyncstream{ std::cout } << ans << test2.size() << "thread id: " << std::this_thread::get_id() << " task2 end, time: "<< duration.count() << "us" << std::endl;
 }
 int main()
 {
-
-	common::ThreadPool pool(2,0);
+	common::ThreadPool pool(3,0);
 	auto a = pool.enqueue(task1);
 	auto b = pool.enqueue(task2);
-	a.get();
-	b.get();
+	auto c = pool.enqueue(task2);
+	auto d = pool.enqueue(task1);
+	delete test3;
+	a.wait();
+	b.wait();
+	c.wait();
+	d.wait();
+
+
+	system("pause");
 	return 0;
 }

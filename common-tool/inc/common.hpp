@@ -71,6 +71,7 @@ namespace common
 	* 重载 release 用于获取文件描述符。
 	* 重载 swap 用于交换两个unique_fd。
 	*/
+
 	template<class T = int, class FreeFunc = Functor<::close>>
 	struct unique_fd
 	{
@@ -212,6 +213,73 @@ namespace common
 
 		std::unique_ptr <_ElementPtrType[]> _Arr;
 		std::atomic<size_t> _front = 0, _rear = 0;
+	};
+	/*
+	* BoundedQueue用于实现一个有界队列，支持线程安全的入队和出队操作。内部资源都是通过智能指针管理，支持自定义的删除函数。
+	*/
+	template<class _T>
+	class bounded_queue
+	{
+		using _Type = std::remove_reference_t<_T>;
+	public:
+		bounded_queue(size_t max_size) : _max_size(max_size), _is_closed(false) {}
+
+		~bounded_queue() {
+			_is_closed = true;
+			_cv_could_push.notify_all();
+			_cv_could_pop.notify_all();
+		}
+
+		template<typename... Args>
+		auto emplace_back(Args&&... args) 
+		{
+			std::unique_lock<std::mutex> lock(_mtx);
+			_cv_could_push.wait(lock, [this] { return (_queue.size() < this->_max_size) || _is_closed; });
+			if (_is_closed) throw std::runtime_error("enqueue on closed BoundedQueue");
+			auto& ret = _queue.emplace_back(std::forward<Args>(args)...);
+			_cv_could_pop.notify_one();
+			return ret;
+		}
+
+		_Type& front()
+		{
+			std::unique_lock<std::mutex> lock(_mtx);
+			_cv_could_pop.wait(lock, [this] { return (this->_queue.empty() == false) || _is_closed; });
+			if (_is_closed) throw std::runtime_error("dequeue on closed BoundedQueue");
+			return _queue.front();
+		}
+		//通过检测_Type是否是可移动的，来确定是否使用移动构造函数
+
+		_Type pop() noexcept(false)
+		{
+			//std::shared_ptr
+			std::unique_lock<std::mutex> lock(_mtx);
+			_cv_could_pop.wait(lock, [this] { return (this->_queue.empty()==false) || _is_closed; });
+			if (_is_closed) throw std::runtime_error("dequeue on closed BoundedQueue");
+			_Type _ret{ std::is_move_constructible_v<_Type> ? std::move(_queue.front()): _queue.front() };
+			_queue.pop_front();
+			_cv_could_push.notify_one();
+			return _ret;
+		}
+
+		size_t size() const noexcept
+		{
+			std::unique_lock<std::mutex> lock(_mtx);
+			return _queue.size();
+		}
+
+		bool empty() const noexcept
+		{
+			std::unique_lock<std::mutex> lock(_mtx);
+			return _queue.empty();
+		}
+
+	private:
+		std::deque<_Type> _queue;
+		const size_t _max_size;
+		std::mutex _mtx;
+		std::condition_variable _cv_could_push, _cv_could_pop;
+		bool _is_closed = true;
 	};
 
 	/*
