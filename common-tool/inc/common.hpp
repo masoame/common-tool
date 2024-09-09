@@ -112,7 +112,7 @@ namespace common
 	* _IsThreadSafe == false 时，队列在一读一写的情况下是线程安全的，但是在多读多写的情况下，需要用户自行保证线程安全。
 	* _buf_level 用于设置队列的大小，默认为4，最大为64。 实际大小为2的_buf_level次方。
 	*/
-	template<class _T, class _DeleteFunctionType = nullptr_t, bool _IsThreadSafe = false>
+	template<class _T, class _DeleteFunctionType = nullptr_t, bool _IsThreadSafe = true>
 	class circular_queue 
 	{
 		using _Type = std::remove_reference<_T>::type;
@@ -192,6 +192,30 @@ namespace common
 			return reinterpret_cast<_Type*>(_Arr[_rear & _mask].get());
 		}
 
+		//template<typename... Args>
+		//bool emplace(Args&&... args)
+		//{
+		//	unique_lock _lock(_push_mtx);
+		//	_cv_could_push.wait(_lock, [this] { return full() == false; });
+
+		//	if (full()) return false;
+		//	_Arr[_rear & _mask].reset(new _Type(std::forward<Args>(args)...));
+		//	_rear++;
+		//	_cv_could_pop.notify_one();
+		//	return true;
+		//}
+
+		//_ElementPtrType pop()
+		//{
+		//	unique_lock _lock(_pop_mtx);
+		//	_cv_could_pop.wait(_lock, [this] { return empty() == false; });
+
+		//	if (empty()) return nullptr;
+		//	_ElementPtrType ret{ _Arr[_front++ & _mask].release() };
+		//	_cv_could_push.notify_one();
+		//	return ret;
+		//}
+
 		bool full() const noexcept
 		{
 			if (((_rear + 1) & _mask) == (_front & _mask)) return true;
@@ -213,6 +237,7 @@ namespace common
 
 		std::unique_ptr <_ElementPtrType[]> _Arr;
 		std::atomic<size_t> _front = 0, _rear = 0;
+		std::condition_variable _cv_could_push, _cv_could_pop;
 	};
 	/*
 	* BoundedQueue用于实现一个有界队列，支持线程安全的入队和出队操作。内部资源都是通过智能指针管理，支持自定义的删除函数。
@@ -222,8 +247,8 @@ namespace common
 	{
 		using _Type = std::remove_reference_t<_T>;
 	public:
-		bounded_queue(size_t max_size) : _max_size(max_size), _is_closed(false) {}
-
+		bounded_queue(size_t max_size = ULLONG_MAX) : _max_size(max_size), _is_closed(false) {}
+		
 		~bounded_queue() {
 			_is_closed = true;
 			_cv_could_push.notify_all();
@@ -231,7 +256,7 @@ namespace common
 		}
 
 		template<typename... Args>
-		auto emplace_back(Args&&... args) 
+		_Type& emplace_back(Args&&... args)
 		{
 			std::unique_lock<std::mutex> lock(_mtx);
 			_cv_could_push.wait(lock, [this] { return (_queue.size() < this->_max_size) || _is_closed; });
@@ -241,6 +266,24 @@ namespace common
 			return ret;
 		}
 
+		void push_back(_Type&& value)
+		{
+			std::unique_lock<std::mutex> lock(_mtx);
+			_cv_could_push.wait(lock, [this] { return (_queue.size() < this->_max_size) || _is_closed; });
+			if (_is_closed) throw std::runtime_error("enqueue on closed BoundedQueue");
+			_queue.push_back(std::move(value));
+			_cv_could_pop.notify_one();
+		}
+
+		void push_back(const _Type& value)
+		{
+			std::unique_lock<std::mutex> lock(_mtx);
+			_cv_could_push.wait(lock, [this] { return (_queue.size() < this->_max_size) || _is_closed; });
+			if (_is_closed) throw std::runtime_error("enqueue on closed BoundedQueue");
+			_queue.push_back(value);
+			_cv_could_pop.notify_one();
+		}
+
 		_Type& front()
 		{
 			std::unique_lock<std::mutex> lock(_mtx);
@@ -248,15 +291,14 @@ namespace common
 			if (_is_closed) throw std::runtime_error("dequeue on closed BoundedQueue");
 			return _queue.front();
 		}
-		//通过检测_Type是否是可移动的，来确定是否使用移动构造函数
 
-		_Type pop() noexcept(false)
+		//通过检测_Type是否是可移动的，来确定是否使用移动构造函数
+		_Type pop()
 		{
-			//std::shared_ptr
 			std::unique_lock<std::mutex> lock(_mtx);
 			_cv_could_pop.wait(lock, [this] { return (this->_queue.empty()==false) || _is_closed; });
 			if (_is_closed) throw std::runtime_error("dequeue on closed BoundedQueue");
-			_Type _ret{ std::is_move_constructible_v<_Type> ? std::move(_queue.front()): _queue.front() };
+			_Type _ret{ std::move(_queue.front()) };
 			_queue.pop_front();
 			_cv_could_push.notify_one();
 			return _ret;

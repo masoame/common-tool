@@ -8,36 +8,48 @@ class A
 {
 public:
 	int i;
-	A(int i) :i(i) { std::cout << "constructor" << std::endl; }
-	~A() {}
-	A(const A& other) :i(other.i) { std::cout << "copy constructor" << std::endl; }
 
-	A(A&& other):i(other.i) { other.i = 0; std::cout << "move constructor" << std::endl; }
+	A(int i) :i(i) { 
+		//std::cout << "constructor" << std::endl; 
+	}
+	~A() {}
+	A(const A& other) :i(other.i) { 
+		//std::cout << "copy constructor" << std::endl; 
+	}
+
+	A(A&& other):i(other.i) { 
+		other.i = 0; //std::cout << "move constructor" << std::endl;
+	}
 
 	operator int() { return i; }
 };
-
-common::circular_queue<int, nullptr_t, false> test(8);
-std::queue<int> test2;
-std::mutex mtx;
-std::condition_variable cv, cv2;
-
-common::bounded_queue<int>* test3=new common::bounded_queue<int>(1000000);
 
 void FreeFunc(int* a)
 {
 	delete a;
 	return;
 }
+
+common::circular_queue<int, nullptr_t, false> test(10);
+std::queue<int> test2;
+std::mutex mtx;
+std::condition_variable cv, cv2;
+
+common::bounded_queue<std::unique_ptr<int>> test3{1024};
+
+
 std::queue<std::vector<int>> pp;
 void task1()
 {
 	auto start = std::chrono::high_resolution_clock::now();
 
-	for (int i = 0; i < 5000000; i++)
+	for (int i = 0; i < 200000000; i++)
 	{
-		test3->emplace_back(i);
-
+		while (test.try_emplace(i) == false)
+		{
+			std::this_thread::yield();
+		}
+		//test3.emplace_back(new int(i));
 	}
 	auto end = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
@@ -48,9 +60,21 @@ void task2()
 {
 	auto start = std::chrono::high_resolution_clock::now();
 	int ans = 0;
-	for (int i = 0; i < 5000000; i++)
+	for (int i = 0; i < 200000000; i++)
 	{
-		auto a = test3->pop();
+		while (true)
+		{
+			auto a = test.try_pop();
+			if (a)
+			{
+				ans += *a;
+				break;
+			}
+			else
+			{
+				std::this_thread::yield();
+			}
+		}
 	}
 	auto end = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
@@ -59,16 +83,14 @@ void task2()
 }
 int main()
 {
-	common::ThreadPool pool(3,0);
+	common::ThreadPool pool(5,0);
 	auto a = pool.enqueue(task1);
 	auto b = pool.enqueue(task2);
-	auto c = pool.enqueue(task2);
-	auto d = pool.enqueue(task1);
-	delete test3;
+
+	//delete test3;
 	a.wait();
 	b.wait();
-	c.wait();
-	d.wait();
+
 
 
 	system("pause");
