@@ -303,9 +303,11 @@ namespace common
 	/*
 	* singletont_thread_pool用于实现一个单例线程池，支持线程安全的任务队列和线程管理。
 	* 参考项目: https://github.com/progschj/ThreadPool
-	* 未完成
+	* 适配C++20，并增加stop_source参数，用于控制线程池的关闭。
+	* 使用std::jthread替代原来的std::thread，支持stop_token参数，用于控制线程的关闭。
 	*/
 	class ThreadPool {
+
 	public:
 		ThreadPool(size_t threads, size_t max_queue_size);
 		~ThreadPool();
@@ -313,29 +315,26 @@ namespace common
 		template<class F, class... Args>
 		auto enqueue(F&& f, Args&&... args)
 			-> std::future<typename std::invoke_result<F,Args...>::type>;
-
-
 	private:
-		// need to keep track of threads so we can join them
-		std::vector< std::thread > workers;
 
-		circular_queue<std::function<void()>> _task_queue;
+		// need to keep track of threads so we can join them
+		std::vector< std::jthread > workers;
 		// the task queue
 		std::queue< std::function<void()> > tasks;
 
 		// synchronization
 		std::mutex queue_mutex;
 		std::condition_variable condition;
-		bool stop;
+		//bool stop;
+		std::stop_source stop;
 	};
 
 	// the constructor just launches some amount of workers
 	inline ThreadPool::ThreadPool(size_t threads,size_t max_queue_size)
-		: stop(false)
 	{
 		for (size_t i = 0; i < threads; ++i)
 			workers.emplace_back(
-				[this]
+				[this](std::stop_token _stop_token)
 				{
 					for (;;)
 					{
@@ -344,8 +343,8 @@ namespace common
 						{
 							std::unique_lock<std::mutex> lock(this->queue_mutex);
 							this->condition.wait(lock,
-								[this] { return this->stop || !this->tasks.empty(); });
-							if (this->stop && this->tasks.empty())
+								[this,&_stop_token] { return (_stop_token.stop_requested() == true) || this->tasks.empty()==false; });
+							if (_stop_token.stop_requested() && this->tasks.empty())
 								return;
 							task = std::move(this->tasks.front());
 							this->tasks.pop();
@@ -353,7 +352,7 @@ namespace common
 
 						task();
 					}
-				}
+				},std::move(stop.get_token())
 			);
 	}
 
@@ -372,8 +371,7 @@ namespace common
 		{
 			std::unique_lock<std::mutex> lock(queue_mutex);
 
-			// don't allow enqueueing after stopping the pool
-			if (stop)
+			if (stop.stop_requested())
 				throw std::runtime_error("enqueue on stopped ThreadPool");
 
 			tasks.emplace([task]() { (*task)(); });
@@ -387,10 +385,8 @@ namespace common
 	{
 		{
 			std::unique_lock<std::mutex> lock(queue_mutex);
-			stop = true;
+			stop.request_stop();
 		}
 		condition.notify_all();
-		for (std::thread& worker : workers)
-			worker.join();
 	}
 }

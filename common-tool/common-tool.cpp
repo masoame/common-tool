@@ -30,7 +30,7 @@ void FreeFunc(int* a)
 	return;
 }
 
-common::circular_queue<int, nullptr_t, false> test(10);
+common::circular_queue<int, nullptr_t, true> test(10);
 std::queue<int> test2;
 std::mutex mtx;
 std::condition_variable cv, cv2;
@@ -43,7 +43,7 @@ void task1()
 {
 	auto start = std::chrono::high_resolution_clock::now();
 
-	for (int i = 0; i < 200000000; i++)
+	for (int i = 0; i < 100000000; i++)
 	{
 		while (test.try_emplace(i) == false)
 		{
@@ -56,11 +56,11 @@ void task1()
 
 	std::osyncstream{ std::cout } << "thread id: " << std::this_thread::get_id() << " task1 end, time: " << duration.count() << "us" << std::endl;
 }
-void task2()
+int task2()
 {
 	auto start = std::chrono::high_resolution_clock::now();
 	int ans = 0;
-	for (int i = 0; i < 200000000; i++)
+	for (int i = 0; i < 100000000; i++)
 	{
 		while (true)
 		{
@@ -79,19 +79,39 @@ void task2()
 	auto end = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
 
-	std::osyncstream{ std::cout } << ans << test2.size() << "thread id: " << std::this_thread::get_id() << " task2 end, time: "<< duration.count() << "us" << std::endl;
+	std::osyncstream{ std::cout }<< test2.size() << "thread id: " << std::this_thread::get_id() << " task2 end, time: "<< duration.count() << "us" << std::endl;
+	return ans;
 }
+
+
+volatile int sum(int a, int b)
+{
+	throw std::runtime_error("error");
+	return a + b;
+}
+
+
 int main()
 {
-	common::ThreadPool pool(5,0);
-	auto a = pool.enqueue(task1);
-	auto b = pool.enqueue(task2);
+	//{
+	//	common::ThreadPool pool(4, 0);
 
-	//delete test3;
-	a.wait();
-	b.wait();
+	//	auto f1 = pool.enqueue(task1);
+	//	auto f2 = pool.enqueue(task2);
+	//	auto f3 = pool.enqueue(task1);
+	//	auto f4 = pool.enqueue(task2);
 
+	//	std::this_thread::sleep_for(std::chrono::seconds(3));
 
+	//	f3.get();
+	//	f1.get();
+	//	std::osyncstream{ std::cout } << "task2 ans: " << f2.get() << std::endl;
+	//	std::osyncstream{ std::cout } << "task2 ans: " << f4.get() << std::endl;
+	//}
+	std::packaged_task<int(int, int)> task(sum);
+	auto f = task.get_future();
+	task(1, 2);
+	std::osyncstream{ std::cout } << "task result: " << f.get() << std::endl;
 
 	system("pause");
 	return 0;
