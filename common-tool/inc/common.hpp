@@ -192,30 +192,6 @@ namespace common
 			return reinterpret_cast<_Type*>(_Arr[_rear & _mask].get());
 		}
 
-		//template<typename... Args>
-		//bool emplace(Args&&... args)
-		//{
-		//	unique_lock _lock(_push_mtx);
-		//	_cv_could_push.wait(_lock, [this] { return full() == false; });
-
-		//	if (full()) return false;
-		//	_Arr[_rear & _mask].reset(new _Type(std::forward<Args>(args)...));
-		//	_rear++;
-		//	_cv_could_pop.notify_one();
-		//	return true;
-		//}
-
-		//_ElementPtrType pop()
-		//{
-		//	unique_lock _lock(_pop_mtx);
-		//	_cv_could_pop.wait(_lock, [this] { return empty() == false; });
-
-		//	if (empty()) return nullptr;
-		//	_ElementPtrType ret{ _Arr[_front++ & _mask].release() };
-		//	_cv_could_push.notify_one();
-		//	return ret;
-		//}
-
 		bool full() const noexcept
 		{
 			if (((_rear + 1) & _mask) == (_front & _mask)) return true;
