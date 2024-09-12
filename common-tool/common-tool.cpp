@@ -37,7 +37,6 @@ std::condition_variable cv, cv2;
 
 common::bounded_queue<std::unique_ptr<int>> test3{1024};
 
-
 std::queue<std::vector<int>> pp;
 void task1()
 {
@@ -85,7 +84,6 @@ int task2()
 	return ans;
 }
 
-
 volatile void sum(std::stop_token st)
 {
 	std::stop_callback a(st, []() { std::osyncstream{ std::cout } << "task canceled" << std::endl; });
@@ -99,7 +97,6 @@ volatile void sum(std::stop_token st)
 	std::osyncstream{ std::cout } << "task end" << std::endl;
 
 }
-
 
 int main()
 {
@@ -121,16 +118,10 @@ int main()
 
 	//std::jthread f(sum);
 
-
-	//
 	//std::stop_callback sc(f.get_stop_token(), []() { std::osyncstream{ std::cout } << "task canceled" << std::endl; });
 	//
 
 	//std::osyncstream{ std::cout } << "task result: " << f.get() << std::endl;
-
-
-
-
 
 	//f=std::jthread(sum);
 	//f.request_stop();
