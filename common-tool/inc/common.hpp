@@ -309,7 +309,7 @@ namespace common
 	class ThreadPool {
 
 	public:
-		ThreadPool(size_t threads, size_t max_queue_size);
+		ThreadPool(size_t threads);
 		~ThreadPool();
 
 		template<class F, class... Args>
@@ -330,11 +330,11 @@ namespace common
 	};
 
 	// the constructor just launches some amount of workers
-	inline ThreadPool::ThreadPool(size_t threads,size_t max_queue_size)
+	inline ThreadPool::ThreadPool(size_t threads)
 	{
 		for (size_t i = 0; i < threads; ++i)
 			workers.emplace_back(
-				[this](std::stop_token _stop_token)
+				[this]()
 				{
 					for (;;)
 					{
@@ -343,8 +343,8 @@ namespace common
 						{
 							std::unique_lock<std::mutex> lock(this->queue_mutex);
 							this->condition.wait(lock,
-								[this,&_stop_token] { return (_stop_token.stop_requested() == true) || this->tasks.empty()==false; });
-							if (_stop_token.stop_requested() && this->tasks.empty())
+								[this] { return (this->stop.stop_requested() == true) || this->tasks.empty()==false; });
+							if (this->stop.stop_requested() && this->tasks.empty())
 								return;
 							task = std::move(this->tasks.front());
 							this->tasks.pop();
@@ -352,7 +352,7 @@ namespace common
 
 						task();
 					}
-				},std::move(stop.get_token())
+				}
 			);
 	}
 
