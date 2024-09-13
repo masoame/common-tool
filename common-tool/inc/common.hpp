@@ -1,65 +1,75 @@
 #pragma once
+
+#ifdef _WIN32
+#include<windows.h>
+#elif __linux__
+
+#else
+#error "Unknown"
+#endif 
+
 #include<type_traits>
 #include<memory>
 #include<functional>
 #include<queue>
 #include<mutex>
 #include<condition_variable>
-
 #include<future>
 #include<assert.h>
+#include<optional>
 
 extern void close(int fd);
 
 namespace common
 {
-    /*
-    * Functor用于静态封装一个函数，使其可以作为模板参数。
+	//using namespace std::chrono_literals;
+	/*
+	* Functor用于静态封装一个函数，使其可以作为模板参数。
 	* _F: 被封装的函数
-    */
-    template <auto _F>
-    using Functor = std::integral_constant<std::remove_reference_t<decltype(_F)>, _F>;
+	*/
+	template <auto _F>
+	using Functor = std::integral_constant<std::remove_reference_t<decltype(_F)>, _F>;
 
-    /*
-    * AutoPtr用于封装智能指针，使其可以自动管理内存，
+	/*
+	* AutoPtr用于封装智能指针，使其可以自动管理内存，
 	* 方便对于一些c库自动析构进行适配
 	* 支持两级指针因为有些库封装析构的指针是二级指针。（即释放对二级指向对象的指针对对应的一级指针进行置空）
 	* 重载 operator& 返回一个指针_Type**，用于获取原始指针的地址。
 	* _T: 被封装的智能指针类型
-    */
-    template<class _T, class _FreeFunc>
-    struct AutoHandle
-    {
-        using _Type = std::remove_reference_t<_T>;
-        static_assert(std::is_invocable_v< _FreeFunc::value_type, _Type**> || std::is_invocable_v<_FreeFunc::value_type, _Type*>);
-        constexpr static bool isSecPtr = std::is_invocable_v<_FreeFunc::value_type, _Type**>;
+	*/
+	template<class _T, class _FreeFunc>
+	struct AutoHandle
+	{
+		using _Type = std::remove_reference_t<_T>;
+		static_assert(std::is_invocable_v<typename _FreeFunc::value_type, _Type**> || std::is_invocable_v<typename _FreeFunc::value_type, _Type*>);
+		constexpr static bool isSecPtr = std::is_invocable_v<typename _FreeFunc::value_type, _Type**>;
 
 		AutoHandle() noexcept {}
 		AutoHandle(AutoHandle& _handle) = delete;
-        explicit AutoHandle(AutoHandle&& _handle) noexcept : _ptr(_handle.release()) {}
+		AutoHandle(AutoHandle&& _handle) noexcept : _ptr(_handle.release()) {}
 		AutoHandle(_Type* ptr) noexcept : _ptr(ptr) {}
 
-        void operator=(_Type* ptr) noexcept { _ptr.reset(ptr); }
-        void operator=(AutoHandle&& _handle) noexcept { _ptr.reset(_handle.release()); }
+		AutoHandle& operator=(_Type* ptr) noexcept { _ptr.reset(ptr); return *this; }
+		AutoHandle& operator=(AutoHandle&& _handle) noexcept { _ptr.reset(_handle.release()); return *this; }
 
-        operator const _Type* () const noexcept { return _ptr.get(); }
-        operator _Type*& () noexcept { return *reinterpret_cast<_Type**>(this); }
-        operator bool() const noexcept { return _ptr.get() != nullptr; }
+		operator const _Type* () const noexcept { return _ptr.get(); }
+		operator _Type*& () noexcept { return *reinterpret_cast<_Type**>(this); }
+		operator bool() const noexcept { return _ptr.get() != nullptr; }
 
-        _Type** operator&() { static_assert(sizeof(*this) == sizeof(void*)); return reinterpret_cast<_Type**>(this); }
+		_Type** operator&() { static_assert(sizeof(*this) == sizeof(void*)); return reinterpret_cast<_Type**>(this); }
 
-        _Type* operator->() const noexcept { return _ptr.get(); }
+		_Type* operator->() const noexcept { return _ptr.get(); }
 
-        void reset(_Type* ptr = nullptr) noexcept { _ptr.reset(ptr); }
+		void reset(_Type* ptr = nullptr) noexcept { _ptr.reset(ptr); }
 
-        auto release() noexcept { return _ptr.release(); }
-        auto get() const noexcept { return _ptr.get(); }
-    private:
-        struct DeletePrimaryPtr { void operator()(void* ptr) { _FreeFunc()(static_cast<_Type*>(ptr)); } };
-        struct DeleteSecPtr { void operator()(void* ptr) { _FreeFunc()(reinterpret_cast<_Type**>(&ptr)); } };
-        using DeletePtr = std::conditional<isSecPtr, DeleteSecPtr, DeletePrimaryPtr>::type;
-        std::unique_ptr<_Type, DeletePtr> _ptr;
-    };
+		auto release() noexcept { return _ptr.release(); }
+		auto get() const noexcept { return _ptr.get(); }
+	private:
+		struct DeletePrimaryPtr { void operator()(void* ptr) { _FreeFunc()(static_cast<_Type*>(ptr)); } };
+		struct DeleteSecPtr { void operator()(void* ptr) { _FreeFunc()(reinterpret_cast<_Type**>(&ptr)); } };
+		using DeletePtr = std::conditional<isSecPtr, DeleteSecPtr, DeletePrimaryPtr>::type;
+		std::unique_ptr<_Type, DeletePtr> _ptr;
+	};
 
 	/*
 	* unique_fd用于封装一个文件描述符，使其可以自动管理内存，
@@ -97,14 +107,14 @@ namespace common
 	};
 
 
-    /*
-    * reverse_bit用于反转位域reverse_bit
-    */
-    template<class _T1>
-    inline void reverse_bit(_T1& val, _T1 local) noexcept requires std::is_pod_v<_T1>
+	/*
+	* reverse_bit用于反转位域reverse_bit
+	*/
+	template<class _T1>
+	inline void reverse_bit(_T1& val, _T1 local) noexcept requires std::is_pod_v<_T1>
 	{
-        val = (val & local) ? (val & (~local)) : (val | local);
-    }
+		val = (val & local) ? (val & (~local)) : (val | local);
+	}
 
 	/*
 	* circular_queue用于实现一个循环队列，支持线程安全的入队和出队操作。内部资源都是通过智能指针管理，支持自定义的删除函数。
@@ -112,18 +122,18 @@ namespace common
 	* _IsThreadSafe == false 时，队列在一读一写的情况下是线程安全的，但是在多读多写的情况下，需要用户自行保证线程安全。
 	* _buf_level 用于设置队列的大小，默认为4，最大为64。 实际大小为2的_buf_level次方。
 	*/
-	template<class _T, class _DeleteFunctionType = nullptr_t, bool _IsThreadSafe = true>
-	class circular_queue 
+	template<class _T, class _DeleteFunctionType = std::nullptr_t, bool _IsThreadSafe = false>
+	class circular_queue
 	{
 		using _Type = std::remove_reference<_T>::type;
 		using _ElementPtrType = std::conditional_t<std::is_null_pointer_v<_DeleteFunctionType>, std::unique_ptr<_Type>, AutoHandle<_Type, _DeleteFunctionType>>;
-		using _HasMutex = std::conditional_t<_IsThreadSafe, std::mutex, nullptr_t>;
+		using _HasMutex = std::conditional_t<_IsThreadSafe, std::mutex, std::nullptr_t>;
 		using _IsLock = std::conditional_t<_IsThreadSafe, std::unique_lock<std::mutex>, nullptr_t>;
 
 	public:
 		circular_queue(circular_queue& target) = delete;
 
-		explicit circular_queue(unsigned char _buf_level = 4) :_mask(~((~0) << _buf_level))
+		circular_queue(unsigned char _buf_level = 4) :_mask(~((~0) << _buf_level))
 		{
 			assert(_buf_level >= 1);
 			assert(_buf_level <= 64);
@@ -224,7 +234,7 @@ namespace common
 		using _Type = std::remove_reference_t<_T>;
 	public:
 		bounded_queue(size_t max_size = ULLONG_MAX) : _max_size(max_size), _is_closed(false) {}
-		
+
 		~bounded_queue() {
 			_is_closed = true;
 			_cv_could_push.notify_all();
@@ -232,72 +242,83 @@ namespace common
 		}
 
 		template<typename... Args>
-		_Type& emplace_back(Args&&... args)
+		void emplace(Args&&... args) noexcept
 		{
-			std::unique_lock<std::mutex> lock(_mtx);
+			std::unique_lock lock(_mtx);
 			_cv_could_push.wait(lock, [this] { return (_queue.size() < this->_max_size) || _is_closed; });
-			if (_is_closed) throw std::runtime_error("enqueue on closed BoundedQueue");
-			auto& ret = _queue.emplace_back(std::forward<Args>(args)...);
+			if (_is_closed) return;
+			_queue.emplace_back(std::forward<Args>(args)...);
 			_cv_could_pop.notify_one();
-			return ret;
+			return;
 		}
 
-		void push_back(_Type&& value)
+		void push(_Type&& value) noexcept
 		{
-			std::unique_lock<std::mutex> lock(_mtx);
+			std::unique_lock lock(_mtx);
 			_cv_could_push.wait(lock, [this] { return (_queue.size() < this->_max_size) || _is_closed; });
-			if (_is_closed) throw std::runtime_error("enqueue on closed BoundedQueue");
+			if (_is_closed) return;
 			_queue.push_back(std::move(value));
 			_cv_could_pop.notify_one();
 		}
 
-		void push_back(const _Type& value)
+		void push(const _Type& value) noexcept
 		{
-			std::unique_lock<std::mutex> lock(_mtx);
+			std::unique_lock lock(_mtx);
 			_cv_could_push.wait(lock, [this] { return (_queue.size() < this->_max_size) || _is_closed; });
-			if (_is_closed) throw std::runtime_error("enqueue on closed BoundedQueue");
+			if (_is_closed) return;
 			_queue.push_back(value);
 			_cv_could_pop.notify_one();
 		}
 
-		_Type& front()
+		std::optional<_Type> pop() noexcept
 		{
-			std::unique_lock<std::mutex> lock(_mtx);
+			std::unique_lock lock(_mtx);
 			_cv_could_pop.wait(lock, [this] { return (this->_queue.empty() == false) || _is_closed; });
-			if (_is_closed) throw std::runtime_error("dequeue on closed BoundedQueue");
-			return _queue.front();
-		}
-
-		//通过检测_Type是否是可移动的，来确定是否使用移动构造函数
-		_Type pop()
-		{
-			std::unique_lock<std::mutex> lock(_mtx);
-			_cv_could_pop.wait(lock, [this] { return (this->_queue.empty()==false) || _is_closed; });
-			if (_is_closed) throw std::runtime_error("dequeue on closed BoundedQueue");
+			if (_is_closed) return std::nullopt;
 			_Type _ret{ std::move(_queue.front()) };
 			_queue.pop_front();
 			_cv_could_push.notify_one();
 			return _ret;
 		}
 
-		size_t size() const noexcept
+		template <class _Rep, class _Period>
+		std::optional<_Type> pop_for(const std::chrono::duration<_Rep, _Period>& _Rel_time) noexcept
 		{
-			std::unique_lock<std::mutex> lock(_mtx);
+			std::unique_lock lock(_mtx);
+			bool cv_status = _cv_could_pop.wait_for(lock, _Rel_time, [this] { return (this->_queue.empty() == false) || _is_closed; });
+			if (_is_closed || !cv_status) return std::nullopt;
+			_Type _ret{ std::move(_queue.front()) };
+			_queue.pop_front();
+			_cv_could_push.notify_one();
+			return _ret;
+		}
+
+		inline size_t size() const noexcept
+		{
 			return _queue.size();
 		}
 
-		bool empty() const noexcept
+		inline bool empty() const noexcept
 		{
-			std::unique_lock<std::mutex> lock(_mtx);
 			return _queue.empty();
 		}
 
+		inline bool full() const noexcept
+		{
+			return _queue.size() >= _max_size;
+		}
+
+		void clear() noexcept
+		{
+			std::unique_lock lock(_mtx);
+			_queue.clear();
+		}
 	private:
+		bool _is_closed = true;
+		std::condition_variable _cv_could_push, _cv_could_pop;
 		std::deque<_Type> _queue;
 		const size_t _max_size;
 		std::mutex _mtx;
-		std::condition_variable _cv_could_push, _cv_could_pop;
-		bool _is_closed = true;
 	};
 
 	/*
@@ -314,7 +335,7 @@ namespace common
 
 		template<class F, class... Args>
 		auto enqueue(F&& f, Args&&... args)
-			-> std::future<typename std::invoke_result<F,Args...>::type>;
+			-> std::future<typename std::invoke_result<F, Args...>::type>;
 	private:
 
 		// need to keep track of threads so we can join them
@@ -343,7 +364,7 @@ namespace common
 						{
 							std::unique_lock<std::mutex> lock(this->queue_mutex);
 							this->condition.wait(lock,
-								[this] { return (this->stop.stop_requested() == true) || this->tasks.empty()==false; });
+								[this] { return (this->stop.stop_requested() == true) || this->tasks.empty() == false; });
 							if (this->stop.stop_requested() && this->tasks.empty())
 								return;
 							task = std::move(this->tasks.front());
@@ -359,9 +380,9 @@ namespace common
 	// add new work item to the pool
 	template<class F, class... Args>
 	auto ThreadPool::enqueue(F&& f, Args&&... args)
-		-> std::future<typename std::invoke_result<F,Args...>::type>
+		-> std::future<typename std::invoke_result<F, Args...>::type>
 	{
-		using return_type = typename std::invoke_result<F,Args...>::type;
+		using return_type = typename std::invoke_result<F, Args...>::type;
 
 		auto task = std::make_shared< std::packaged_task<return_type()> >(
 			std::bind(std::forward<F>(f), std::forward<Args>(args)...)
