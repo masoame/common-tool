@@ -17,6 +17,7 @@
 #include<future>
 #include<assert.h>
 #include<optional>
+#include<thread>
 
 extern void close(int fd);
 
@@ -49,24 +50,49 @@ namespace common
 		AutoHandle(AutoHandle&& _handle) noexcept : _ptr(_handle.release()) {}
 		AutoHandle(_Type* ptr) noexcept : _ptr(ptr) {}
 
-		AutoHandle& operator=(_Type* ptr) noexcept { _ptr.reset(ptr); return *this; }
-		AutoHandle& operator=(AutoHandle&& _handle) noexcept { _ptr.reset(_handle.release()); return *this; }
+		AutoHandle& operator=(_Type* ptr) noexcept { 
+			_ptr.reset(ptr); return *this; 
+		}
+		AutoHandle& operator=(AutoHandle&& _handle) noexcept { 
+			_ptr.reset(_handle.release()); return *this; 
+		}
 
-		operator const _Type* () const noexcept { return _ptr.get(); }
-		operator _Type*& () noexcept { return *reinterpret_cast<_Type**>(this); }
-		operator bool() const noexcept { return _ptr.get() != nullptr; }
+		operator const _Type* () const noexcept { 
+			return _ptr.get(); 
+		}
+		operator _Type*& () noexcept { 
+			return *reinterpret_cast<_Type**>(this); 
+		}
+		operator bool() const noexcept { 
+			return _ptr.get() != nullptr; 
+		}
 
-		_Type** operator&() { static_assert(sizeof(*this) == sizeof(void*)); return reinterpret_cast<_Type**>(this); }
+		_Type** operator&() { 
+			static_assert(sizeof(*this) == sizeof(void*)); 
+			return reinterpret_cast<_Type**>(this); 
+		}
 
-		_Type* operator->() const noexcept { return _ptr.get(); }
+		_Type* operator->() const noexcept { 
+			return _ptr.get(); 
+		}
 
-		void reset(_Type* ptr = nullptr) noexcept { _ptr.reset(ptr); }
+		void reset(_Type* ptr = nullptr) noexcept { 
+			_ptr.reset(ptr); 
+		}
 
-		auto release() noexcept { return _ptr.release(); }
-		auto get() const noexcept { return _ptr.get(); }
+		auto release() noexcept { 
+			return _ptr.release(); 
+		}
+		auto get() const noexcept {
+			return _ptr.get(); 
+		}
 	private:
-		struct DeletePrimaryPtr { void operator()(void* ptr) { _FreeFunc()(static_cast<_Type*>(ptr)); } };
-		struct DeleteSecPtr { void operator()(void* ptr) { _FreeFunc()(reinterpret_cast<_Type**>(&ptr)); } };
+		struct DeletePrimaryPtr { void operator()(void* ptr) { 
+			_FreeFunc()(static_cast<_Type*>(ptr)); } 
+		};
+		struct DeleteSecPtr { void operator()(void* ptr) { 
+			_FreeFunc()(reinterpret_cast<_Type**>(&ptr)); } 
+		};
 		using DeletePtr = std::conditional<isSecPtr, DeleteSecPtr, DeletePrimaryPtr>::type;
 		std::unique_ptr<_Type, DeletePtr> _ptr;
 	};
@@ -122,6 +148,7 @@ namespace common
 	* _IsThreadSafe == false 时，队列在一读一写的情况下是线程安全的，但是在多读多写的情况下，需要用户自行保证线程安全。
 	* _buf_level 用于设置队列的大小，默认为4，最大为64。 实际大小为2的_buf_level次方。
 	*/
+
 	template<class _T, class _DeleteFunctionType = std::nullptr_t, bool _IsThreadSafe = false>
 	class circular_queue
 	{
@@ -162,7 +189,7 @@ namespace common
 		{
 			_IsLock _lock(_push_mtx);
 			if (full()) return false;
-			_Arr[_rear & _mask].reset(new _Type(std::move(target)));
+			_Arr[_rear & _mask].reset(target));
 			_rear++;
 			return true;
 		}
@@ -339,7 +366,7 @@ namespace common
 	private:
 
 		// need to keep track of threads so we can join them
-		std::vector< std::jthread > workers;
+		std::vector< std::jthread> workers;
 		// the task queue
 		std::queue< std::function<void()> > tasks;
 
