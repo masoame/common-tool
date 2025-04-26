@@ -189,7 +189,7 @@ namespace common
 		{
 			_IsLock _lock(_push_mtx);
 			if (full()) return false;
-			_Arr[_rear & _mask].reset(target));
+			_Arr[_rear & _mask].reset(target);
 			_rear++;
 			return true;
 		}
