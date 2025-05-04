@@ -13,3 +13,6 @@ project ("common-tool")
 
 # 包含子项目。
 add_subdirectory ("common-tool")
+
+#测试目录
+add_subdirectory("test")
